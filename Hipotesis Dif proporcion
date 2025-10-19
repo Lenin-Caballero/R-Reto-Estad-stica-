@@ -1,0 +1,133 @@
+---
+title: "Prueba hipotesis"
+author: "Lenin Caballero"
+date: "2025-10-19"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Cargamos librerias y bases de datos. 
+Asignamos los nombres a los estados que nos intereza analizar(Aquellos con alto y bajo desempeño lector)
+```{r}
+library(dplyr)
+
+setwd("/Users/Elmar/Downloads")
+
+# Cargar bases de datos
+datos_2024 <- read.csv("Datos_molec_2024-1.csv")
+datos_2023 <- read.csv("Datos_molec_2023-1.csv")
+datos_2022 <- read.csv("Datos_molec_2022-1.csv")
+datos_2021 <- read.csv("Datos_molec_2021-1.csv")
+datos_2020 <- read.csv("Datos_molec_2020-1.csv")
+datos_2019 <- read.csv("Datos_molec_2019-1.csv")
+
+# Seleccionar variables
+d_2024 <- datos_2024 %>% select(entidad, p4) %>% mutate(anio = 2024)
+d_2023 <- datos_2023 %>% select(entidad, p4) %>% mutate(anio = 2023)
+d_2022 <- datos_2022 %>% select(entidad, p4) %>% mutate(anio = 2022)
+d_2021 <- datos_2021 %>% select(entidad, p4) %>% mutate(anio = 2021)
+d_2020 <- datos_2020 %>% select(entidad, p4) %>% mutate(anio = 2020)
+d_2019 <- datos_2019 %>% select(entidad, p4) %>% mutate(anio = 2019)
+
+# Combinar todos los años
+datos <- bind_rows(d_2024, d_2023, d_2022, d_2021, d_2020, d_2019)
+
+# Crear variable binaria y grupos
+datos_filtrados <- datos %>%
+  filter(entidad %in% c("01", "04", "12", "16")) %>%
+  filter(!is.na(p4)) %>%
+  mutate(
+    lee_libros = ifelse(p4 >= 1, 1, 0),
+    grupo = case_when(
+      entidad == "04" ~ "alto_desempeño",      # Campeche
+      entidad == "16" ~ "alto_desempeño",      # Michoacán
+      entidad == "01" ~ "bajo_desempeño",      # Aguascalientes
+      entidad == "12" ~ "bajo_desempeño"       # Guerrero
+    )
+  )
+```
+
+
+Creamos tabla para ver la frecuencia lectora en los estados con alto y bajo desempeño. Tambien extraemos estos valores para utilizarlos en la prueba de hipotesis 
+```{r}
+tabla_observada <- table(datos_filtrados$grupo, datos_filtrados$lee_libros)
+colnames(tabla_observada) <- c("No lee libros", "Lee libros")
+rownames(tabla_observada) <- c("Alto desempeño", "Bajo desempeño")
+
+print(tabla_observada)
+
+# Extraer datos para la prueba
+n_alto <- sum(tabla_observada[1, ])
+x_alto <- tabla_observada[1, 2]
+p_alto <- x_alto / n_alto
+
+n_bajo <- sum(tabla_observada[2, ])
+x_bajo <- tabla_observada[2, 2]
+p_bajo <- x_bajo / n_bajo
+```
+
+
+Para continuar con la prueba de hipotesis necesitamos verificar la regla de los 5s: np ≥ 5 y n(1-p) ≥ 5 para ambos grupos (alto y bajo desempeño)
+```{r}
+cat("Regla de los 5s: np ≥ 5 y n(1-p) ≥ 5\n\n")
+cat("Alto desempeño:\n")
+cat("  n × p =", round(n_alto * p_alto, 1), "\n")
+cat("  n × (1-p) =", round(n_alto * (1 - p_alto), 1), "\n\n")
+
+cat("Bajo desempeño:\n")
+cat("  n × p =", round(n_bajo * p_bajo, 1), "\n")
+cat("  n × (1-p) =", round(n_bajo * (1 - p_bajo), 1), "\n\n")
+```
+
+Definimos la prueba de hipotesis de proporciones
+```{r}
+cat("H0: p_alto = p_bajo\n")
+cat("    (Las proporciones de lectores activos son iguales en estados con alto y bajo desempeño)\n\n")
+cat("H1: p_alto > p_bajo\n")
+cat("    (La proporción de lectores activos es mayor en alto desempeño)\n\n")
+cat("α = 0.04\n\n")
+
+# Realizar prueba
+resultado <- prop.test(c(x_alto, x_bajo), c(n_alto, n_bajo), 
+                       alternative = "greater",
+                       conf.level = 0.96,
+                       correct = FALSE)
+```
+
+Resultados 
+```{r}
+cat("Proporción Alto desempeño (p̂₁) =", round(p_alto, 4), 
+    "=", round(p_alto * 100, 2), "%\n")
+cat("Proporción Bajo desempeño (p̂₂) =", round(p_bajo, 4), 
+    "=", round(p_bajo * 100, 2), "%\n")
+cat("Diferencia =", round(p_alto - p_bajo, 4), 
+    "=", round((p_alto - p_bajo) * 100, 2), "% puntos\n\n")
+
+cat("Estadístico Z =", round(resultado$statistic, 4), "\n")
+cat("p-valor =", format.pval(resultado$p.value, digits = 4), "\n")
+cat("Intervalo de Confianza 95% = [", 
+    round(resultado$conf.int[1], 4), ",", 
+    round(resultado$conf.int[2], 4), "]\n\n")
+```
+
+Conclusión
+
+```{r}
+
+alpha <- 0.04
+
+if (resultado$p.value < alpha) {
+  cat("Conclusión: Se rechaza la Hipótesis Nula (H0).\n\n")
+  cat("El p-valor es menor que 0.04, lo que indica que existe una diferencia estadísticamente significativa en la proporción de lectores activos entre estados de alto desempeño (Campeche y Michoacán) y estados de bajo desempeño (Aguascalientes y Guerrero).\n\n")
+  cat("Los estados de alto desempeño tienen una proporción significativamente mayor de lectores activos (", round(p_alto * 100, 2), "%) comparado con los estados de bajo desempeño (", round(p_bajo * 100, 2), "%).\n")
+} else {
+  cat("Conclusión: No se rechaza la Hipótesis Nula (H0).\n\n")
+  cat("El p-valor es mayor o igual a 0.05, por lo que no hay evidencia estadística suficiente para afirmar que existe una diferencia significativa en la proporción de lectores activos entre ambos grupos.\n")
+}
+```
+
+
+
