@@ -1,0 +1,468 @@
+---
+title: "Prueba Hipotesis Diferencia Proporciones"
+author: "Lenin Caballero"
+date: "2025-10-18"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Cargar librerias y base de datos 
+```{r}
+library(dplyr)
+library(ggplot2)
+
+setwd("/Users/Elmar/Downloads")
+
+datos_2024 <- read.csv("Datos_molec_2024-1.csv")
+datos_2023 <- read.csv("Datos_molec_2023-1.csv")
+datos_2022 <- read.csv("Datos_molec_2022-1.csv")
+datos_2021 <- read.csv("Datos_molec_2021-1.csv")
+datos_2020 <- read.csv("Datos_molec_2020-1.csv")
+datos_2019 <- read.csv("Datos_molec_2019-1.csv")
+
+```
+
+
+Seleccionamos las variables que vamos a utilizar en la prueba de hipotesis (La entidad y p4 que son los minutos promedio leidos)
+```{r}
+d_2024 <- datos_2024 %>% select(entidad, p4)
+d_2023 <- datos_2023 %>% select(entidad, p4)
+d_2022 <- datos_2022 %>% select(entidad, p4)
+d_2021 <- datos_2021 %>% select(entidad, p4)
+d_2020 <- datos_2020 %>% select(entidad, p4)
+d_2019 <- datos_2019 %>% select(entidad, p4)
+
+# Se añade columna de año a cada dataframe
+d_2024 <- d_2024 %>% mutate(anio = 2024)
+d_2023 <- d_2023 %>% mutate(anio = 2023)
+d_2022 <- d_2022 %>% mutate(anio = 2022)
+d_2021 <- d_2021 %>% mutate(anio = 2021)
+d_2020 <- d_2020 %>% mutate(anio = 2020)
+d_2019 <- d_2019 %>% mutate(anio = 2019)
+
+# Se combina cada dataframe en uno solo
+datos_completos <- bind_rows(d_2024, d_2023, d_2022, d_2021, d_2020, d_2019)
+```
+
+Seleccionamos solo los estados que queremos analizar, aquellos que tienen más minutos de lectura (Campeche y Michoacan) y aquellos con menos minutos promedio de lectura (Aguascalientes y Guerrero)
+```{r}
+datos_filtrados <- datos_completos %>%
+  # 01 = Aguascalientes, 04 = Campeche, 12 = Guerrero, 16 = Michoacan
+  filter(entidad %in% c("01", "04", "12", "16")) %>%
+  filter(!is.na(p4)) %>%
+  mutate(
+    # Creamos variable binaria "lee_libros"
+    # 1 = leyó al menos 1 libro (lector activo)
+    # 0 = no leyó libros
+    lee_libros = ifelse(p4 >= 1, 1, 0),
+    
+    # Se le asigna variable a cada estado dependiendo de su desempeño lector
+    grupo = case_when(
+      entidad == "04" ~ "alto_desempeño",      # Campeche
+      entidad == "16" ~ "alto_desempeño",      # Michoacán
+      entidad == "01" ~ "bajo_desempeño",      # Aguascalientes
+      entidad == "12" ~ "bajo_desempeño"       # Guerrero
+    ),
+    
+    # Cambiamos nombre para mayor claridad
+    estado = case_when(
+      entidad == "01" ~ "Aguascalientes",
+      entidad == "04" ~ "Campeche",
+      entidad == "12" ~ "Guerrero",
+      entidad == "16" ~ "Michoacán"
+    )
+  )
+print(table(datos_filtrados$estado, datos_filtrados$grupo))
+```
+
+Creamos tabla para ver la frecuencia lectora en los estados con alto y bajo desempeño. Tambien extraemos estos valores para utilizarlos en la prueba de hipotesis 
+
+```{r}
+tabla_contingencia <- datos_filtrados %>%
+  group_by(grupo) %>%
+  summarise(
+    Lee_libros = sum(lee_libros == 1),
+    No_lee_libros = sum(lee_libros == 0),
+    Total = n(),
+    Proporcion = sum(lee_libros == 1) / n(),
+    .groups = 'drop'
+  )
+n_alto <- tabla_contingencia$Total[tabla_contingencia$grupo == "alto_desempeño"]
+x_alto <- tabla_contingencia$Lee_libros[tabla_contingencia$grupo == "alto_desempeño"]
+p_alto <- tabla_contingencia$Proporcion[tabla_contingencia$grupo == "alto_desempeño"]
+
+n_bajo <- tabla_contingencia$Total[tabla_contingencia$grupo == "bajo_desempeño"]
+x_bajo <- tabla_contingencia$Lee_libros[tabla_contingencia$grupo == "bajo_desempeño"]
+p_bajo <- tabla_contingencia$Proporcion[tabla_contingencia$grupo == "bajo_desempeño"]
+print(tabla_contingencia)
+```
+
+Para continuar con la prueba de hipotesis necesitamos verificar ciertas cosas con los datos. 
+1- Necesitamos que np ≥ 5 y n(1-p) ≥ 5 para ambos grupos
+2- Necesitamos verificar la independencia de las muestras 
+3- Necesitamos que la muestra sea aleatoria y representativa
+```{r}
+# 1
+cat("\nSUPUESTO 1: Tamaño Muestral (Regla de los 5s)\n")
+cat("Requisito: np ≥ 5 y n(1-p) ≥ 5\n\n")
+
+supuesto1_alto_exito <- n_alto * p_alto
+supuesto1_alto_fracaso <- n_alto * (1 - p_alto)
+supuesto1_bajo_exito <- n_bajo * p_bajo
+supuesto1_bajo_fracaso <- n_bajo * (1 - p_bajo)
+
+cat("Estados Alto Desempeño:\n")
+cat("  n × p =", round(supuesto1_alto_exito, 2), 
+    ifelse(supuesto1_alto_exito >= 5, "Sí cumple", "No cumple"), "\n")
+cat("  n × (1-p) =", round(supuesto1_alto_fracaso, 2), 
+    ifelse(supuesto1_alto_fracaso >= 5, "Sí cumple", "No cumple"), "\n")
+
+cat("\nEstados Bajo Desempeño:\n")
+cat("  n × p =", round(supuesto1_bajo_exito, 2), 
+    ifelse(supuesto1_bajo_exito >= 5, "Sí cumple", "No cumple"), "\n")
+cat("  n × (1-p) =", round(supuesto1_bajo_fracaso, 2), 
+    ifelse(supuesto1_bajo_fracaso >= 5, "Sí cumple", "No cumple"), "\n")
+
+supuesto1_cumplido <- (supuesto1_alto_exito >= 5) && (supuesto1_alto_fracaso >= 5) &&
+                      (supuesto1_bajo_exito >= 5) && (supuesto1_bajo_fracaso >= 5)
+
+cat("\nInterpretación: ")
+if(supuesto1_cumplido) {
+  cat("SUPUESTO CUMPLIDO\n")
+  cat("Podemos usar la distribución normal para la prueba\n")
+} else {
+  cat("SUPUESTO NO CUMPLIDO\n")
+  cat("Considerar prueba exacta de Fisher\n")
+}
+
+# 2
+cat("\nSUPUESTO 2: Independencia de Muestras\n")
+cat("Requisito: Los datos de cada grupo son independientes\n")
+cat("CUMPLIDO: Estados diferentes = muestras independientes\n")
+
+# 3
+cat("\nSUPUESTO 3: Muestra Aleatoria\n")
+cat("Se puede asumir que los datos MOLEC son recolectados aleatoriamente\n")
+```
+
+Ya que verificamos que los supuestos anteriores se cumplen, ahora podemos definir la prueba de hipotesis.
+
+Se hará una prueba de hipotesis de diferencia de proporciones, de tipo Z (distribución normal)
+
+Hipotesis Nula (H0: p_alto = p_bajo) = La proporción de lectores recurrentes son iguales en los estados con más minutos leidos y en aquellos con menos minutos leidos 
+
+Hipotesis Alternativa (H1: p_alto > p_bajo) = La proporción de lectores recurrentes es mayor en los estados que más minutos leidos tienen 
+
+Se hará una prueba unilateral de cola derecha con un nivel de significancia de a = 0.05
+
+Justificación: Se usa la prueba de proporciones gracias a que transformamos la variable p4 a una variable binaria creando categorias (lectores activos y lectores no lectores), los lectores activos que son aquellos que leyeron al menos 1 libro al año, la representamos en el código con un "1", mientras que los no lectores las representamos con un "0".
+
+Cuando trabajamos con variables binarias el parametro de interes es la proporción, por eso se eligió la prueba de hipotesis de diferencia de proporciones (otras pruebas como la t student compara medias)
+
+Se eligió una prueba unilateral ya que partimos de la suposición de que los estados con alto desempeño lector van a tener una proporción más alta que los demás (Se usaría una prueba de hiporesis bilateral si la hipotesis H1 fuera: p_alto ≠ p_bajo)
+
+Usamos una distribución normal (z) gracias a que se cumple la regla de los 5s, ya que esto nos asegura que es valido utilizar esta distribución
+
+Calculamos el estadistico de prueba
+```{r}
+# Diferencia observada de proporciones
+diferencia_obs <- p_alto - p_bajo
+
+cat("\nProporciones muestrales:\n")
+cat("p̂_alto =", round(x_alto, 0), "/", n_alto, "=", round(p_alto, 4), 
+    "=", round(p_alto * 100, 2), "%\n")
+cat("p̂_bajo =", round(x_bajo, 0), "/", n_bajo, "=", round(p_bajo, 4), 
+    "=", round(p_bajo * 100, 2), "%\n")
+cat("Diferencia observada (p̂_alto - p̂_bajo) =", round(diferencia_obs, 4), "\n")
+
+# Proporción combinada (bajo H0)
+p_combinada <- (x_alto + x_bajo) / (n_alto + n_bajo)
+
+cat("\nBajo H0 (proporciones iguales):\n")
+cat("p̂_combinada =", round(p_combinada, 4), "=", round(p_combinada * 100, 2), "%\n")
+
+# Error estándar bajo H0
+se_h0 <- sqrt(p_combinada * (1 - p_combinada) * (1/n_alto + 1/n_bajo))
+
+cat("\nError estándar bajo H0:\n")
+cat("SE = √[p̂(1-p̂)(1/n₁ + 1/n₂)]\n")
+cat("SE = √[", round(p_combinada, 4), " × ", round(1 - p_combinada, 4), 
+    " × (1/", n_alto, " + 1/", n_bajo, ")]\n")
+cat("SE =", round(se_h0, 5), "\n")
+
+# Estadístico Z
+z_estadistico <- diferencia_obs / se_h0
+
+cat("\nEstadístico de prueba Z:\n")
+cat("Z = (p̂₁ - p̂₂) / SE\n")
+cat("Z = ", round(diferencia_obs, 4), " / ", round(se_h0, 5), "\n")
+cat("Z = ", round(z_estadistico, 4), "\n")
+
+# Valor p (prueba unilateral, cola derecha)
+valor_p <- 1 - pnorm(z_estadistico)
+
+cat("\nValor p (prueba unilateral, cola derecha):\n")
+cat("p-value = P(Z >", round(z_estadistico, 4), ")\n")
+cat("p-value =", format.pval(valor_p, digits = 4), "\n")
+
+# Valor crítico para α = 0.05 (unilateral)
+z_critico <- qnorm(0.95)  # 1 - α
+
+cat("\nValor crítico para α = 0.05 (unilateral):\n")
+cat("z_crítico = z_(0.95) =", round(z_critico, 4), "\n")
+
+# Decisión
+cat("Regla de decisión: Si Z > z_crítico, rechazamos H0\n")
+cat("                   Si Z =", round(z_estadistico, 4), " y z_crítico =", 
+    round(z_critico, 4), "\n")
+
+if(z_estadistico > z_critico) {
+  cat("                   ", round(z_estadistico, 4), ">", round(z_critico, 4), 
+      "→ RECHAZAMOS H0\n\n")
+  decision <- "Rechazar H0"
+} else {
+  cat("                   ", round(z_estadistico, 4), "<", round(z_critico, 4), 
+      "→ NO rechazamos H0\n\n")
+  decision <- "No rechazar H0"
+}
+
+if(valor_p < 0.05) {
+  cat("Confirmación (valor p): p-value =", format.pval(valor_p, digits = 4), 
+      "< 0.05 → RECHAZAMOS H0\n\n")
+  decision_p <- "Rechazar H0"
+} else {
+  cat("Confirmación (valor p): p-value =", format.pval(valor_p, digits = 4), 
+      "≥ 0.05 → NO rechazamos H0\n\n")
+  decision_p <- "No rechazar H0"
+}
+```
+
+Calculamos el intervalo de confianza para la diferencia de proporciones(p_alto - p_bajo). Usamos un intervalo del 95% con una distribución normal estandar.
+```{r}
+# Error estándar para IC (con proporciones muestrales, no combinada)
+se_ic <- sqrt((p_alto * (1 - p_alto) / n_alto) + (p_bajo * (1 - p_bajo) / n_bajo))
+
+# Valor z para IC 95% (bilateral)
+z_ic <- qnorm(0.975)  # (1 + 0.95) / 2
+
+# Límites del IC
+ic_inferior <- diferencia_obs - z_ic * se_ic
+ic_superior <- diferencia_obs + z_ic * se_ic
+
+cat("\nFórmula:\n")
+cat("IC = (p̂₁ - p̂₂) ± z_(α/2) × √[(p̂₁(1-p̂₁)/n₁) + (p̂₂(1-p̂₂)/n₂)]\n")
+cat("IC = ", round(diferencia_obs, 4), " ± ", round(z_ic, 4), " × ", 
+    round(se_ic, 5), "\n\n")
+
+cat("IC 95%: [", round(ic_inferior, 4), ",", round(ic_superior, 4), "]\n\n")
+
+cat("Interpretación:\n")
+if(ic_inferior > 0) {
+  cat("→ El IC NO incluye 0\n")
+  cat("→ Hay diferencia significativa a nivel 95% de confianza\n")
+  cat("→ Estamos 95% confiados de que p_alto es mayor que p_bajo\n")
+} else if(ic_superior < 0) {
+  cat("→ El IC NO incluye 0 (pero es negativo)\n")
+  cat("→ Hay diferencia significativa a nivel 95% de confianza\n")
+  cat("→ Estamos 95% confiados de que p_alto es menor que p_bajo\n")
+} else {
+  cat("→ El IC INCLUYE 0\n")
+  cat("→ No hay diferencia significativa a nivel 95% de confianza\n")
+}
+```
+
+Generamos un gráfico que nos ayude a ver la distribución muestral y la zona de rechazo 
+```{r}
+# Gráfico 1: Distribución normal con zona de rechazo
+x <- seq(-4, 4, 0.1)
+y <- dnorm(x)
+
+par(mar = c(5, 4, 4, 2))
+plot(x, y, type = "l", lwd = 3, 
+     xlab = "z (desviaciones estándar)", 
+     ylab = "Densidad",
+     main = "Distribución Muestral y Prueba de Hipótesis\n(Diferencia de Proporciones)",
+     ylim = c(-0.02, 0.45))
+
+abline(h = 0)
+
+# Sombrear zona de rechazo (α = 0.05 en cola derecha)
+x_rechazo <- x[x >= z_critico]
+y_rechazo <- dnorm(x_rechazo)
+polygon(c(x_rechazo, rev(x_rechazo)), c(y_rechazo, rep(0, length(y_rechazo))), 
+        col = rgb(1, 0, 0, 0.3), border = NA)
+
+# Línea del valor crítico
+abline(v = z_critico, col = "red", lty = 3, lwd = 2)
+text(z_critico, -0.015, round(z_critico, 2), col = "red", cex = 0.8, adj = c(0.5, 1))
+
+# Línea del estadístico de prueba
+abline(v = z_estadistico, col = "blue", lty = 2, lwd = 2)
+text(z_estadistico, -0.008, round(z_estadistico, 2), col = "blue", cex = 0.8, adj = c(0.5, 1))
+
+# Leyenda
+legend("topleft", 
+       c("Zona de rechazo (α=0.05)", "Valor crítico", "Estadístico de prueba"),
+       fill = c(rgb(1, 0, 0, 0.3), NA, NA),
+       col = c(NA, "red", "blue"),
+       lty = c(NA, 3, 2),
+       lwd = c(NA, 2, 2),
+       cex = 0.8)
+```
+
+
+Generamos un gráfico para comparar las proporciones 
+
+```{r}
+datos_barras <- data.frame(
+  Grupo = c("Alto Desempeño", "Bajo Desempeño"),
+  Proporcion = c(p_alto * 100, p_bajo * 100),
+  n = c(n_alto, n_bajo),
+  x = c(x_alto, x_bajo)
+)
+
+colores <- c("darkgreen", "darkred")
+
+par(mar = c(5, 5, 4, 2))
+bp <- barplot(datos_barras$Proporcion, 
+              names.arg = datos_barras$Grupo,
+              col = colores,
+              main = "Proporción de Lectores Activos por Grupo",
+              ylab = "Porcentaje (%)",
+              ylim = c(0, 70),
+              lwd = 2)
+
+# Agregar valores en las barras
+for(i in 1:nrow(datos_barras)) {
+  text(bp[i], datos_barras$Proporcion[i] + 2, 
+       paste0(round(datos_barras$Proporcion[i], 1), "%"), 
+       cex = 0.9, font = 2, adj = c(0.5, 0))
+  text(bp[i], 2, 
+       paste0("n=", datos_barras$n[i], "\nx=", datos_barras$x[i]), 
+       cex = 0.8, col = "white")
+}
+
+legend("topright", "Lectores = leyeron ≥1 libro", cex = 0.85)
+```
+
+Generamos un gráfico que nos permita visualizar el intervalo de confianza 
+```{r}
+par(mar = c(5, 4, 4, 2))
+plot(0, ylim = c(0, 2), xlim = c(ic_inferior - 0.02, ic_superior + 0.02), 
+     yaxt = "n", ylab = "", xlab = "Diferencia de Proporciones (p_alto - p_bajo)",
+     main = "Intervalo de Confianza 95% para la Diferencia",
+     type = "n")
+
+# Línea de referencia (diferencia = 0)
+abline(v = 0, col = "gray", lty = 2, lwd = 1.5)
+text(0, 1.85, "Sin diferencia\n(p_alto = p_bajo)", col = "gray", cex = 0.8, adj = c(0.5, 1))
+
+# Intervalo de confianza
+arrows(ic_inferior, 1, ic_superior, 1, angle = 90, code = 3, length = 0.1, lwd = 2)
+
+# Punto de diferencia observada
+points(diferencia_obs, 1, pch = 19, cex = 1.3, col = "darkblue")
+
+# Etiquetas
+text(ic_inferior, 1.35, round(ic_inferior, 4), cex = 0.8)
+text(ic_superior, 1.35, round(ic_superior, 4), cex = 0.8)
+text(diferencia_obs, 0.6, paste0("Diferencia\nobservada\n", 
+                                 round(diferencia_obs, 4)), cex = 0.8, adj = c(0.5, 1), col = "darkblue")
+
+```
+
+Resumimos los resultados en una tabla 
+```{r}
+tabla_resumen <- data.frame(
+  Concepto = c(
+    "Grupo",
+    "Grupo",
+    "Diferencia observada",
+    "Estadístico Z",
+    "Valor crítico",
+    "Valor p",
+    "Nivel de significancia",
+    "Decisión",
+    "IC inferior (95%)",
+    "IC superior (95%)"
+  ),
+  Alto_Desempeño = c(
+    paste0(n_alto, " obs"),
+    paste0(round(p_alto * 100, 2), "%"),
+    round(diferencia_obs, 4),
+    round(z_estadistico, 4),
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ),
+  Bajo_Desempeño = c(
+    paste0(n_bajo, " obs"),
+    paste0(round(p_bajo * 100, 2), "%"),
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    round(ic_inferior, 4),
+    round(ic_superior, 4)
+  ),
+  Valor = c(
+    "",
+    "",
+    round(diferencia_obs, 4),
+    round(z_estadistico, 4),
+    round(z_critico, 4),
+    format.pval(valor_p, digits = 4),
+    "0.05",
+    decision,
+    round(ic_inferior, 4),
+    round(ic_superior, 4)
+  )
+)
+
+print(tabla_resumen)
+```
+
+
+Con base a los resultados obtenidos, podemos concluir lo siguiente 
+```{r}
+cat("Prueba de Hipotesis de diferencia de proporciones\n\n")
+cat("Estadístico Z =", round(z_estadistico, 4), "\n")
+cat("Valor crítico (z_α) =", round(z_critico, 4), "\n")
+cat("p-valor =", format.pval(valor_p, digits = 4), "\n")
+cat("Nivel de significancia (α) = 0.05\n\n")
+
+alpha <- 0.05
+if (valor_p < alpha) {
+  cat("Conclusión: Se rechaza la Hipótesis Nula (H0).\n")
+  cat("El p-valor es menor que 0.05, lo que indica que existe una diferencia\nestadísticamente significativa en la proporción de lectores recurrentes\nentre estados con alto desempeño lector (Campeche y Michoacán)\ny estados con bajo desempeño lector (Aguascalientes y Guerrero).\n\n")
+  cat("Interpretación:\n")
+  cat("Los estados de alto desempeño tienen una proporción de", 
+      round(p_alto * 100, 2), "% de lectores activos,\n")
+  cat("mientras que los estados de bajo desempeño tienen", 
+      round(p_bajo * 100, 2), "% de lectores activos.\n")
+  cat("Esta diferencia de", round(diferencia_obs * 100, 2), 
+      "% es estadísticamente significativa.\n")
+} else {
+  cat("Conclusión: No se rechaza la Hipótesis Nula (H0).\n")
+  cat("El p-valor es mayor o igual a 0.05, por lo que no hay evidencia\nestadística suficiente para afirmar que existe una diferencia\nsignificativa en la proporción de lectores recurrentes entre ambos grupos.\n")
+}
+```
+
+
+
+
+
+
+
+
+
+
+
